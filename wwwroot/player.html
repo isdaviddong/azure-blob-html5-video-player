@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Azure Blob + HTML5 Video 播放器示範</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans TC", sans-serif; }
+    body { margin: 24px; }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .controls { margin-top: 12px; display: grid; gap: 8px; max-width: 960px; }
+    button { padding: 8px 12px; border-radius: 10px; border: 1px solid #ddd; cursor: pointer; }
+    input[type="number"] { width: 8rem; padding: 6px 8px; }
+    input[type="text"] { width: min(960px, 100%); padding: 8px; }
+    .hint { color: #666; font-size: 14px; }
+    video { width: min(960px, 100%); max-height: 70vh; background: #000; border-radius: 12px; }
+    .kbd { padding: 2px 6px; border: 1px solid #bbb; border-bottom-width: 2px; border-radius: 6px; background: #f9f9f9; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  </style>
+</head>
+<body>
+  <h1>Azure Blob + HTML5 Video 快轉/跳點示範</h1>
+
+  <label for="src">影片來源（Azure Blob SAS URL）</label><br/>
+  <input id="src" type="text" value="https://arock2backup.blob.core.windows.net/temp/%E3%80%90%E4%BF%A1%E7%BE%A9%E3%80%912020%E5%B9%B4_1080p.mp4?sp=r&st=2025-08-17T13:11:06Z&se=2025-08-17T21:26:06Z&spr=https&sv=2024-11-04&sr=b&sig=H%2Bhp6YA3HvrE%2FSi9S9dB8z4af52FQQN79chSIZ025QE%3D"/>
+  <div class="row">
+    <button id="load">載入</button>
+    <span class="hint">若按下後無法播放，請確認 SAS 是否未過期，或在 Azure Storage 啟用 Blob 服務 CORS（GET/HEAD/OPTIONS）。</span>
+  </div>
+
+  <div style="margin-top:12px">
+    <video id="player" controls preload="metadata" playsinline crossorigin="anonymous"></video>
+  </div>
+
+  <div class="controls">
+    <div class="row">
+      <button data-seek="-10">⏪ 倒退 10s</button>
+      <button data-seek="-5">-5s</button>
+      <button id="toggle">⏯️ 播放/暫停</button>
+      <button data-seek="5">+5s</button>
+      <button data-seek="10">⏩ 快轉 10s</button>
+    </div>
+
+    <div class="row">
+      <label>跳到（秒）</label>
+      <input id="sec" type="number" min="0" step="1" value="60"/>
+      <button id="jump">跳轉</button>
+      <span class="hint">或輸入 <code>#t=90</code> 於網址的 hash 後重新整理自動跳轉。</span>
+    </div>
+
+    <div class="row">
+      <label>播放速率</label>
+      <button data-rate="0.5">0.5×</button>
+      <button data-rate="1">1×</button>
+      <button data-rate="1.25">1.25×</button>
+      <button data-rate="1.5">1.5×</button>
+      <button data-rate="2">2×</button>
+      <span id="rateNow" class="hint"></span>
+    </div>
+
+    <div class="row">
+      <label>章節（範例）</label>
+      <button class="chapter" data-at="0">片頭</button>
+      <button class="chapter" data-at="60">1:00</button>
+      <button class="chapter" data-at="300">5:00</button>
+      <button class="chapter" data-at="900">15:00</button>
+    </div>
+
+    <div class="hint">
+      鍵盤：<span class="kbd">J</span>/<span class="kbd">L</span> 倒退/快轉 5s、<span class="kbd">K</span> 播放/暫停、<span class="kbd">←</span>/<span class="kbd">→</span> ±5s、<span class="kbd">0–9</span> 跳到 0%–90%。
+    </div>
+  </div>
+
+  <script>
+    const $ = sel => document.querySelector(sel);
+    const player = $('#player');
+    const rateNow = $('#rateNow');
+
+    // 載入來源
+    $('#load').addEventListener('click', () => {
+      const url = $('#src').value.trim();
+      player.src = url;
+      player.load();
+      // 若 URL hash 帶 #t=sec 自動跳轉
+      const m = location.hash.match(/t=(\d+)/);
+      if (m) {
+        const s = parseInt(m[1], 10);
+        player.addEventListener('loadedmetadata', () => { player.currentTime = s; }, { once: true });
+      }
+    });
+
+    // 初始自動載入一次
+    window.addEventListener('DOMContentLoaded', () => $('#load').click());
+
+    // 快轉/倒退
+    document.querySelectorAll('button[data-seek]').forEach(btn => {
+      btn.addEventListener('click', () => { player.currentTime += parseFloat(btn.dataset.seek); });
+    });
+
+    // 章節跳轉
+    document.querySelectorAll('.chapter').forEach(btn => {
+      btn.addEventListener('click', () => { player.currentTime = parseFloat(btn.dataset.at); player.play(); });
+    });
+
+    // 播放/暫停
+    $('#toggle').addEventListener('click', () => { player.paused ? player.play() : player.pause(); });
+
+    // 指定秒數跳轉
+    $('#jump').addEventListener('click', () => {
+      const s = parseFloat($('#sec').value || '0');
+      if (!Number.isNaN(s)) player.currentTime = s;
+    });
+
+    // 變速播放
+    document.querySelectorAll('button[data-rate]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        player.playbackRate = parseFloat(btn.dataset.rate);
+        rateNow.textContent = `目前速率：${player.playbackRate}×`;
+      });
+    });
+
+    // 鍵盤快捷鍵（YouTube 風格）
+    document.addEventListener('keydown', e => {
+      const tag = (e.target && e.target.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return; // 避免輸入框衝突
+      if (e.key.toLowerCase() === 'j') player.currentTime -= 5;
+      if (e.key.toLowerCase() === 'l') player.currentTime += 5;
+      if (e.key.toLowerCase() === 'k') player.paused ? player.play() : player.pause();
+      if (/^[0-9]$/.test(e.key)) {
+        const pct = parseInt(e.key, 10) / 10; // 0–0.9
+        if (Number.isFinite(player.duration)) player.currentTime = player.duration * pct;
+      }
+      if (e.key === 'ArrowLeft') player.currentTime -= 5;
+      if (e.key === 'ArrowRight') player.currentTime += 5;
+    });
+
+    // 顯示當前速率
+    player.addEventListener('ratechange', () => { rateNow.textContent = `目前速率：${player.playbackRate}×`; });
+  </script>
+</body>
+</html>
